@@ -1,4 +1,4 @@
-"""Shared configuration helpers for InsertDiversity scripts."""
+"""Shared configuration helpers for BC_tracking scripts."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def available_threads() -> int:
 def resolve_thread_count(config_value: Optional[Any] = None, workload_size: Optional[int] = None) -> int:
     """Resolve a user-configured thread count.
 
-    By default, InsertDiversity uses every hardware thread reported by the host.
+    By default, BC_tracking uses every hardware thread reported by the host.
     Users can override that with a positive integer in the consolidated config.
     The workload_size argument is accepted for callers that want to report
     job counts, but the default remains the maximum available hardware threads.

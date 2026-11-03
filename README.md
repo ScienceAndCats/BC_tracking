@@ -1,4 +1,4 @@
-# InsertDiversity
+# BC_tracking
 
 A FASTA/FASTQ analysis toolkit for extracting barcodes between known flanking
 sequences, quantifying diversity, and comparing barcode abundance across samples.
@@ -9,7 +9,7 @@ Create the Conda environment with all runtime dependencies, including Starcode:
 
 ```bash
 conda env create -f environment.yml
-conda activate insertdiversity
+conda activate BC_tracking
 ```
 
 To update an existing environment after pulling changes:
