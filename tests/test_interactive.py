@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from interactive_trajectories import save_interactive_trajectory_plot
+from barcode_groups import UNLISTED_COLOR, UNLISTED_LABEL, configure_barcode_groups
 
 try:
     from playwright.sync_api import sync_playwright
@@ -126,6 +127,35 @@ class InteractiveTests(unittest.TestCase):
         self.assertIn(sample, self.page.locator('.barcode-list').inner_text())
         self.assertIsNone(self.page.evaluate("window.labelExecuted"))
         self.assertEqual(self.page.evaluate("document.getElementById('barcode-trajectories').layout.yaxis.type"), "linear")
+        self.assertEqual(self.errors, [])
+
+    def test_group_legend_and_unlisted_opacity_survive_selection(self):
+        catalog = Path(self.temp.name) / "groups.csv"
+        catalog.write_text("well,barcode,group\nA1,AAAA,LB\nA2,,LB\nA3,GGGG,LB\n")
+        self.cfg["barcode_groups_csv"] = str(catalog)
+        configure_barcode_groups(self.cfg)
+        self.freqs.loc["GGGG"] = [0.3, 0.4, 0.2]
+        self.open_plot()
+        legend = self.page.locator('.legend .legendtext')
+        self.assertEqual(legend.all_text_contents(), ["LB", UNLISTED_LABEL])
+        state = self.page.evaluate("""() => {
+            const data = document.getElementById('barcode-trajectories').data;
+            return {first: data[1].line.color, sameGroup: data[5].line.color,
+                    unlisted: data[2].line.color, opacity: data[2].opacity,
+                    overlay: Array.from(data[3].y)};
+        }""")
+        self.assertEqual(state['first'], state['sameGroup'])
+        self.assertEqual(state['unlisted'], UNLISTED_COLOR)
+        self.assertEqual(state['opacity'], 0.5)
+        self.assertEqual(state['overlay'], [None, None, None])
+        original = self.page.evaluate("Array.from(document.getElementById('barcode-trajectories').data[2].y)")
+        self.page.locator('.sample-list input').nth(1).uncheck()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data[1].y[1] === null")
+        self.page.locator('.barcode-controls').get_by_role('button', name='Gray out all', exact=True).click()
+        self.page.locator('.barcode-controls').get_by_role('button', name='Select all', exact=True).click()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data[1].y[0] !== null")
+        self.assertEqual(self.page.evaluate("Array.from(document.getElementById('barcode-trajectories').data[2].y)"), original)
+        self.assertEqual(legend.all_text_contents(), ["LB", UNLISTED_LABEL])
         self.assertEqual(self.errors, [])
 
 

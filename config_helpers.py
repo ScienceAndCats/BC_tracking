@@ -63,20 +63,26 @@ def load_script_config(config_path: Path, script_name: str) -> Dict[str, Any]:
     cfg = load_config_file(config_path)
 
     scripts = cfg.get("scripts")
-    if not isinstance(scripts, dict):
-        return cfg
+    if isinstance(scripts, dict):
+        if script_name not in scripts:
+            raise ValueError(f"Consolidated config does not contain scripts.{script_name}")
 
-    if script_name not in scripts:
-        raise ValueError(f"Consolidated config does not contain scripts.{script_name}")
+        step = scripts[script_name]
+        if not isinstance(step, dict) or not isinstance(step.get("config"), dict):
+            raise ValueError(f"scripts.{script_name} must contain a config object")
 
-    step = scripts[script_name]
-    if not isinstance(step, dict) or not isinstance(step.get("config"), dict):
-        raise ValueError(f"scripts.{script_name} must contain a config object")
-
-    step_cfg = dict(step["config"])
-    for shared_key in ("threads", "max_workers"):
-        if shared_key in cfg and shared_key not in step_cfg:
-            step_cfg[shared_key] = cfg[shared_key]
+        step_cfg = dict(step["config"])
+        for shared_key in ("threads", "max_workers", "barcode_groups_csv"):
+            if shared_key in cfg and shared_key not in step_cfg:
+                step_cfg[shared_key] = cfg[shared_key]
+    else:
+        step_cfg = cfg
+    # Catalog paths are relative to the config, including when the runner changes cwd.
+    if step_cfg.get("barcode_groups_csv"):
+        catalog = Path(step_cfg["barcode_groups_csv"]).expanduser()
+        if not catalog.is_absolute():
+            catalog = config_path.resolve().parent / catalog
+        step_cfg["barcode_groups_csv"] = str(catalog)
     return step_cfg
 
 
