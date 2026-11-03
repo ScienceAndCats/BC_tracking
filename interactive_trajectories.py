@@ -5,6 +5,8 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
+from barcode_groups import trajectory_legend, trajectory_style
+
 
 TRAJECTORY_CONTROLS = r"""
 const graph = document.getElementById('{plot_id}');
@@ -12,11 +14,9 @@ const sampleNames = graph.layout.meta.sample_names;
 const barcodeNames = graph.layout.meta.barcode_names;
 const coloredIndices = [];
 const originalY = [];
-graph.data.forEach((trace, index) => {
-    if (index % 2 === 1) {
-        coloredIndices.push(index);
-        originalY.push(Array.from(trace.y));
-    }
+graph.layout.meta.colored_trace_indices.forEach(index => {
+    coloredIndices.push(index);
+    originalY.push(Array.from(graph.data[index].y));
 });
 let sampleBoxes = [];
 let barcodeBoxes = [];
@@ -82,6 +82,7 @@ function addControls(title, kind, names, explanation) {
             const swatch = document.createElement('span');
             swatch.className = 'barcode-color';
             swatch.style.backgroundColor = graph.data[coloredIndices[index]].line.color;
+            swatch.style.opacity = graph.data[coloredIndices[index]].opacity;
             label.appendChild(swatch);
         }
         label.appendChild(document.createTextNode(name));
@@ -110,23 +111,43 @@ def save_interactive_trajectory_plot(barcodes, freqs, outpath: Path, title: str,
     pseudo = float(cfg["pseudocount_for_log_plots"])
     fig = go.Figure()
     for i, barcode in enumerate(barcodes):
+        style = trajectory_style(barcode, cfg)
+        color = style[1] if style else qualitative.Plotly[i % len(qualitative.Plotly)]
+        opacity = style[2] if style else 1.0
+        unlisted = style is not None and opacity == 0.5
         frequencies = freqs.loc[barcode].astype(float).tolist()
         values = [value + pseudo for value in frequencies]
-        hover = [html.escape(f"{barcode} | {sample}") for sample in samples]
-        for color in ("#b8b8b8", qualitative.Plotly[i % len(qualitative.Plotly)]):
+        group_text = f" | {style[0]}" if style else ""
+        hover = [html.escape(f"{barcode} | {sample}{group_text}") for sample in samples]
+        # Unlisted trajectories are already gray: keep a single 50%-opaque base.
+        # An empty overlay lets selection controls preserve this appearance without
+        # stacking two translucent traces and making the line more opaque.
+        for overlay in (False, True):
+            trace_color = color if overlay or unlisted else "#b8b8b8"
             fig.add_trace(go.Scattergl(
-                x=list(range(len(samples))), y=values, mode="lines+markers",
-                line={"color": color, "width": 1}, marker={"color": color, "size": 5},
+                x=list(range(len(samples))),
+                y=[None] * len(samples) if unlisted and overlay else values,
+                mode="lines+markers", opacity=opacity,
+                line={"color": trace_color, "width": 1},
+                marker={"color": trace_color, "size": 5},
                 name=html.escape(barcode), text=hover, customdata=frequencies,
                 hovertemplate="%{text}<br>Frequency: %{customdata:.6g}<extra></extra>",
                 showlegend=False, connectgaps=False,
             ))
+    for group, color, opacity in trajectory_legend(barcodes, cfg):
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode="lines+markers", name=html.escape(group),
+            line={"color": color, "width": 2}, marker={"color": color, "size": 5},
+            opacity=opacity, showlegend=True, hoverinfo="skip",
+        ))
     fig.update_layout(
         title=html.escape(title), template="plotly_white", height=650,
         xaxis={"tickmode": "array", "tickvals": list(range(len(samples))),
                "ticktext": [html.escape(sample) for sample in samples], "tickangle": -90},
         yaxis={"title": "Barcode frequency", "type": "log" if cfg.get("log_scale_y_axis", True) else "linear"},
-        meta={"sample_names": samples, "barcode_names": list(barcodes), "real_barcode_sample": "first"},
+        legend={"title": {"text": "Barcode group"}, "itemclick": False, "itemdoubleclick": False},
+        meta={"sample_names": samples, "barcode_names": list(barcodes), "real_barcode_sample": "first",
+              "colored_trace_indices": list(range(1, 2 * len(barcodes), 2))},
         uirevision="trajectory-selection",
     )
     # Embed the JavaScript bundle: these files can be opened with no server/network.

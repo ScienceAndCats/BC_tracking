@@ -93,6 +93,54 @@ scripts:
 
 The example above is abbreviated; keep the full `config` objects in `pipeline_config.yaml`.
 
+### Barcode groups and additional barcodes
+
+Set the top-level `barcode_groups_csv` to a CSV containing `barcode` and `group`
+columns, like this plate layout (`well` and other extra columns are ignored):
+
+```csv
+well,barcode,group
+A1,CCGTCTGAATCGCCTGGTGCGGTT,LB
+A2,GGGGATGTGCTGGTTCGACTGCGT,LB
+A3,,LB
+B1,TACGTGGTCAGAGGGGTCGTGGGG,Spent SA
+```
+
+```yaml
+barcode_groups_csv: 02Nov2026_96barcodes.csv
+```
+
+This path is relative to the YAML config file; absolute paths also work. The
+setting is shared by barcode extraction and ordered analysis. For a standalone
+script config, put the same key directly in that config. Omit it or set it to
+`null` to retain the original per-barcode colors and skip the additional report.
+
+All trajectory line plots (all-barcode and ranked plots, both PNG and interactive
+HTML) use a consistent color for each catalog group and include a group legend.
+Unlisted barcodes use gray points and lines at **50% opacity**, with a separate
+"Not in barcode CSV" legend entry. Each legend lists the groups represented in
+that plot. Existing real-barcode, length, count, and plot-limit rules still apply.
+In interactive plots, unlisted trajectories are already gray and stay at 50%
+opacity when samples or barcodes are grayed out using the selection controls.
+
+Blank/whitespace-only barcode rows are ignored. Matching trims whitespace and
+ignores sequence case, but otherwise uses exact sequences (`N` is a literal base,
+not a wildcard). Repeated barcodes in the same group are accepted. A barcode
+assigned to conflicting groups, a nonempty barcode without a group, or a CSV
+missing required headers produces a clear error.
+
+When a catalog is configured, `barcode_from_bun_csv.py` also writes
+`outputs/barcodes/additional_barcodes.csv` (the path configured by that step's
+`out_additional_barcodes`). If that setting is omitted, the file is placed beside
+`out_file_summary_report`. It lists every nonempty extracted sequence absent from
+the catalog, with `barcode`, `barcode_len`, `total_count`, `num_files`, and `files`
+(semicolon-separated sample/file labels). These are exact observations from the
+flank-extraction outputs, **before length/count filters and Starcode collapsing**,
+including rare variants that may not appear in plots. It does not search arbitrary
+subsequences of reads without valid flanks. A report with no additional barcodes
+contains only the header. Run the barcode extraction step to refresh this report;
+ordered analysis alone uses existing count reports and does not rescan reads.
+
 ---
 
 ## Running the Full or Partial Pipeline

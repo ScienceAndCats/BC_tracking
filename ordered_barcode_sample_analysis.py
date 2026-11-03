@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from config_helpers import available_threads, configured_threads, load_script_config, run_cli
+from barcode_groups import configure_barcode_groups, trajectory_legend, trajectory_style
 from bun_extract import READ_EXTENSIONS, strip_seq_extensions
 
 
@@ -136,6 +137,7 @@ def load_config(config_path: Path) -> dict:
             "gain_loss_heatmap_sort must be last_vs_first, largest_absolute_change, or max_count"
         )
 
+    configure_barcode_groups(cfg)
     return cfg
 
 
@@ -506,12 +508,26 @@ def save_trajectory_plot(
     fig, ax = plt.subplots(figsize=(max(8, 0.45 * len(samples) + 4), 6))
 
     for bc in barcodes:
+        style = trajectory_style(bc, cfg)
+        options = {} if style is None else {
+            "color": style[1], "alpha": style[2], "marker": "o", "markersize": 3,
+            "zorder": 1 if style[2] == 0.5 else 2,
+        }
         ax.plot(
             x,
             freqs.loc[bc].values.astype(float) + pseudo,
             linewidth=1,
-            alpha=0.7,
+            **{"alpha": 0.7, **options},
         )
+
+    legend = trajectory_legend(barcodes, cfg)
+    if legend:
+        from matplotlib.lines import Line2D
+
+        ax.legend(handles=[Line2D([], [], color=color, alpha=alpha, marker="o",
+                                  linewidth=1, markersize=3, label=group)
+                           for group, color, alpha in legend],
+                  title="Barcode group", loc="upper left", bbox_to_anchor=(1.02, 1))
 
     ax.set_xticks(x)
     ax.set_xticklabels(samples, rotation=90)

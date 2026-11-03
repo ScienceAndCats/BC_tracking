@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple
 
 from config_helpers import available_threads, configured_threads, load_script_config, run_cli
+from barcode_groups import load_barcode_groups, write_additional_barcodes
 
 
 def safe_int(x: str) -> Optional[int]:
@@ -263,8 +264,10 @@ def process_one_csv(
     starcode_cluster_ratio: float,
     starcode_clustering_algorithm: str,
     starcode_threads: int,
+    known_barcodes: Optional[set] = None,
 ):
     barcode_counts = Counter()
+    additional_barcode_counts = Counter()
     total_rows = 0
     rows_with_extracted_barcode = 0
     rows_discarded_long_barcode = 0
@@ -301,6 +304,10 @@ def process_one_csv(
                     if oriented and up_end is not None and dn_start is not None and up_end < dn_start:
                         barcode = oriented[up_end + 1 : dn_start]
                         barcode_len = str(len(barcode))
+
+                # Record exact observations before length/count filters or Starcode collapse.
+                if known_barcodes is not None and barcode and barcode not in known_barcodes:
+                    additional_barcode_counts[barcode] += 1
 
                 if include_empty:
                     ok_to_count = barcode_len != ""
@@ -414,6 +421,7 @@ def process_one_csv(
         "rows_discarded_long_barcode": rows_discarded_long_barcode,
         "barcode_counts": report_counts,
         "exact_barcode_counts": barcode_counts,
+        "additional_barcode_counts": additional_barcode_counts,
         "unique_barcodes": len(barcode_counts),
         "collapsed_unique_barcodes": len(report_counts),
         "real_unique_barcodes": sum(1 for cluster in cluster_info.values() if cluster["is_real"]),
@@ -437,6 +445,8 @@ def main():
     if not cfg_path.is_file():
         raise FileNotFoundError(f"Config not found: {cfg_path}")
     cfg = load_script_config(cfg_path, "barcode_from_bun_csv")
+    barcode_groups = load_barcode_groups(cfg.get("barcode_groups_csv"))
+    known_barcodes = set(barcode_groups) if barcode_groups is not None else None
 
     expected_len = int(cfg.get("expected_barcode_len", 25))
     min_barcode_len = int(cfg.get("min_barcode_len", 1))
@@ -514,6 +524,7 @@ def main():
                 starcode_cluster_ratio=starcode_cluster_ratio,
                 starcode_clustering_algorithm=starcode_clustering_algorithm,
                 starcode_threads=starcode_threads,
+                known_barcodes=known_barcodes,
             ): item
             for item in output_plan
         }
@@ -536,6 +547,14 @@ def main():
             for bc in stats["barcode_counts"].keys():
                 barcode_presence[bc].add(item["label"])
             per_file_stats[item["label"]] = stats
+
+    if barcode_groups is not None:
+        out_additional = Path(cfg.get("out_additional_barcodes") or
+                              out_file_summary.parent / "additional_barcodes.csv")
+        write_additional_barcodes(out_additional, {
+            label: stats["additional_barcode_counts"] for label, stats in per_file_stats.items()
+        })
+        print(f"Additional barcodes not in catalog:         {out_additional}")
 
     if len(output_plan) > 1:
         out_multi.parent.mkdir(parents=True, exist_ok=True)
