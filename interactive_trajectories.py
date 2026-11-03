@@ -12,19 +12,33 @@ TRAJECTORY_CONTROLS = r"""
 const graph = document.getElementById('{plot_id}');
 const sampleNames = graph.layout.meta.sample_names;
 const barcodeNames = graph.layout.meta.barcode_names;
+const groupNames = graph.layout.meta.group_names;
+const barcodeGroups = graph.layout.meta.barcode_group_indices;
 const coloredIndices = [];
 const originalY = [];
+const originalBaseY = [];
 graph.layout.meta.colored_trace_indices.forEach(index => {
     coloredIndices.push(index);
     originalY.push(Array.from(graph.data[index].y));
+    originalBaseY.push(Array.from(graph.data[index - 1].y));
 });
 let sampleBoxes = [];
 let barcodeBoxes = [];
+let groupBoxes = [];
 function updateSelection() {
     const samplesEnabled = sampleBoxes.map(box => box.checked);
-    const values = originalY.map((row, barcode) => row.map((value, sample) =>
-        barcodeBoxes[barcode].checked && samplesEnabled[sample] ? value : null));
-    return Plotly.restyle(graph, {y: values}, coloredIndices);
+    const values = [];
+    const visible = [];
+    const indices = [];
+    originalY.forEach((row, barcode) => {
+        const group = barcodeGroups[barcode];
+        const enabled = group === null || groupBoxes[group].checked;
+        values.push(originalBaseY[barcode], row.map((value, sample) =>
+            barcodeBoxes[barcode].checked && samplesEnabled[sample] ? value : null));
+        visible.push(enabled, enabled);
+        indices.push(coloredIndices[barcode] - 1, coloredIndices[barcode]);
+    });
+    return Plotly.restyle(graph, {y: values, visible: visible}, indices);
 }
 function addControls(title, kind, names, explanation) {
     const panel = document.createElement('section');
@@ -44,7 +58,7 @@ function addControls(title, kind, names, explanation) {
     function refreshStatus() {
         status.textContent = boxes.filter(box => box.checked).length + ' of ' + names.length + ' selected';
     }
-    ['Select all', 'Gray out all'].forEach((text, index) => {
+    ['Select all', kind === 'group' ? 'Hide all' : 'Gray out all'].forEach((text, index) => {
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = text;
@@ -78,11 +92,13 @@ function addControls(title, kind, names, explanation) {
         box.checked = true;
         box.addEventListener('change', () => { refreshStatus(); updateSelection(); });
         label.appendChild(box);
-        if (kind === 'barcode') {
+        if (kind === 'barcode' || kind === 'group') {
             const swatch = document.createElement('span');
             swatch.className = 'barcode-color';
-            swatch.style.backgroundColor = graph.data[coloredIndices[index]].line.color;
-            swatch.style.opacity = graph.data[coloredIndices[index]].opacity;
+            const style = kind === 'group' ? graph.layout.meta.group_styles[index] :
+                [graph.data[coloredIndices[index]].line.color, graph.data[coloredIndices[index]].opacity];
+            swatch.style.backgroundColor = style[0];
+            swatch.style.opacity = style[1];
             label.appendChild(swatch);
         }
         label.appendChild(document.createTextNode(name));
@@ -97,6 +113,10 @@ function addControls(title, kind, names, explanation) {
 }
 sampleBoxes = addControls('Samples', 'sample', sampleNames,
     'Uncheck samples to gray out their points and connecting segments. Counts and frequencies stay unchanged. All plotted barcodes must be real in the first sample; later real flags do not restrict plots.');
+if (groupNames.length) {
+    groupBoxes = addControls('Groups', 'group', groupNames,
+        'Uncheck a group to hide all its trajectories, including gray backgrounds. Rechecking it preserves your barcode and sample selections. Counts and frequencies stay unchanged.');
+}
 barcodeBoxes = addControls('Barcodes', 'barcode', barcodeNames,
     'Uncheck barcodes to gray out their entire trajectories. Barcode and sample selections work together. Search filters this list without changing selections; the buttons apply to all barcodes.');
 """
@@ -134,7 +154,10 @@ def save_interactive_trajectory_plot(barcodes, freqs, outpath: Path, title: str,
                 hovertemplate="%{text}<br>Frequency: %{customdata:.6g}<extra></extra>",
                 showlegend=False, connectgaps=False,
             ))
-    for group, color, opacity in trajectory_legend(barcodes, cfg):
+    legend = trajectory_legend(barcodes, cfg)
+    group_names = [style[0] for style in legend]
+    group_indices = {group: index for index, group in enumerate(group_names)}
+    for group, color, opacity in legend:
         fig.add_trace(go.Scatter(
             x=[None], y=[None], mode="lines+markers", name=html.escape(group),
             line={"color": color, "width": 2}, marker={"color": color, "size": 5},
@@ -150,6 +173,12 @@ def save_interactive_trajectory_plot(barcodes, freqs, outpath: Path, title: str,
               "colored_trace_indices": list(range(1, 2 * len(barcodes), 2))},
         uirevision="trajectory-selection",
     )
+    fig.layout.meta.update({
+        "group_names": group_names,
+        "group_styles": [[color, opacity] for _, color, opacity in legend],
+        "barcode_group_indices": [group_indices[style[0]] if (style := trajectory_style(barcode, cfg)) else None
+                                  for barcode in barcodes],
+    })
     # Embed the JavaScript bundle: these files can be opened with no server/network.
     fragment = pio.to_html(
         fig, full_html=False, include_plotlyjs=True,
@@ -165,7 +194,7 @@ body { font: 15px system-ui, sans-serif; margin: 24px; color: #222; }
 .selection-controls button { margin: 0 8px 12px 0; padding: 6px 12px; }
 .selection-status { color: #555; }
 .barcode-controls input[type="search"] { display: block; margin-bottom: 12px; padding: 6px; }
-.sample-list { display: flex; flex-wrap: wrap; gap: 12px; }
+.sample-list, .group-list { display: flex; flex-wrap: wrap; gap: 12px; }
 .selection-controls label { display: inline-flex; align-items: center; gap: 4px; }
 .selection-controls label[hidden] { display: none; }
 .barcode-list { display: flex; flex-wrap: wrap; gap: 12px; max-height: 220px; overflow-y: auto; }

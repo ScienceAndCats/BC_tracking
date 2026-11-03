@@ -438,7 +438,7 @@ def process_one_csv(
 
 def main():
     ap = argparse.ArgumentParser(description="Extract barcode(s) from bun-match CSV(s) and summarize counts.")
-    ap.add_argument("--config", required=True, help="Path to YAML config file")
+    ap.add_argument("--config", default="config.env", help="Path to config (default: config.env)")
     args = ap.parse_args()
 
     cfg_path = Path(args.config)
@@ -476,7 +476,7 @@ def main():
     out_multi = Path(cfg.get("out_multi_file_barcode_report", "barcode_multi_file_membership.csv"))
     out_file_summary = Path(cfg.get("out_file_summary_report", "barcode_file_summary.csv"))
 
-    if len(input_csvs) == 1:
+    if len(input_csvs) == 1 and (out_csv or out_barcode_report):
         if not out_csv or not out_barcode_report:
             raise ValueError("Single-file mode requires: out_csv and out_barcode_report")
         output_plan = [

@@ -158,6 +158,54 @@ class InteractiveTests(unittest.TestCase):
         self.assertEqual(legend.all_text_contents(), ["LB", UNLISTED_LABEL])
         self.assertEqual(self.errors, [])
 
+    def test_groups_hide_both_traces_and_preserve_barcode_and_sample_selections(self):
+        catalog = Path(self.temp.name) / "groups.csv"
+        catalog.write_text("barcode,group\nAAAA,LB\nGGGG,LB\nTTTT,Spent SA\n")
+        self.cfg["barcode_groups_csv"] = str(catalog)
+        configure_barcode_groups(self.cfg)
+        self.freqs.loc["GGGG"] = [0.3, 0.4, 0.2]
+        self.freqs.loc["TTTT"] = [0.2, 0.1, 0.1]
+        self.open_plot()
+        groups = self.page.locator('.group-list label')
+        self.assertEqual(groups.all_text_contents(), ["LB", "Spent SA", UNLISTED_LABEL])
+        self.page.locator('.sample-list input').nth(1).uncheck()
+        self.page.locator('.barcode-list input').nth(0).uncheck()
+        groups.filter(has_text="LB").locator('input').uncheck()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data[0].visible === false")
+        self.assertEqual(self.page.evaluate("[0,1,4,5].map(i => document.getElementById('barcode-trajectories').data[i].visible)"),
+                         [False, False, False, False])
+        self.assertTrue(self.page.evaluate("document.getElementById('barcode-trajectories').data[6].visible"))
+        groups.filter(has_text="LB").locator('input').check()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data[0].visible === true")
+        self.assertTrue(self.page.evaluate("document.getElementById('barcode-trajectories').data[1].y.every(v => v === null)"))
+        self.assertIsNone(self.page.evaluate("document.getElementById('barcode-trajectories').data[5].y[1]"))
+        self.assertIsNotNone(self.page.evaluate("document.getElementById('barcode-trajectories').data[5].y[0]"))
+        groups.filter(has_text=UNLISTED_LABEL).locator('input').uncheck()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data[2].visible === false")
+        self.assertFalse(self.page.evaluate("document.getElementById('barcode-trajectories').data[3].visible"))
+        self.page.locator('.group-controls').get_by_role('button', name='Hide all', exact=True).click()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data.slice(0,8).every(t => t.visible === false)")
+        self.page.locator('.group-controls').get_by_role('button', name='Select all', exact=True).click()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data.slice(0,8).every(t => t.visible === true)")
+        self.assertEqual(self.page.locator('.group-controls .selection-status').inner_text(), '3 of 3 selected')
+        self.assertEqual(self.page.locator('.barcode-list input:checked').count(), 3)
+        self.assertEqual(self.page.locator('.sample-list input:checked').count(), 2)
+        self.assertEqual(self.page.evaluate("document.getElementById('barcode-trajectories').data[2].opacity"), 0.5)
+        self.assertEqual(self.errors, [])
+
+    def test_group_names_are_literal_text(self):
+        catalog = Path(self.temp.name) / "groups.csv"
+        group = "</script><script>window.groupExecuted=true</script>"
+        catalog.write_text(f"barcode,group\nAAAA,{group}\n")
+        self.cfg["barcode_groups_csv"] = str(catalog)
+        configure_barcode_groups(self.cfg)
+        self.open_plot()
+        self.assertIn(group, self.page.locator('.group-list').inner_text())
+        self.assertIsNone(self.page.evaluate("window.groupExecuted"))
+        self.page.locator('.group-list input').nth(0).uncheck()
+        self.page.wait_for_function("document.getElementById('barcode-trajectories').data[0].visible === false")
+        self.assertEqual(self.errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()

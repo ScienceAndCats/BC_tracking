@@ -1,102 +1,120 @@
-## InsertDiversity
+# InsertDiversity
 
-**A lightweight FASTQ analysis toolkit for quantifying library diversity between known flanking sequences.**
+A FASTA/FASTQ analysis toolkit for extracting barcodes between known flanking
+sequences, quantifying diversity, and comparing barcode abundance across samples.
 
-InsertDiversity scans Illumina FASTQ files to identify reads containing user-defined upstream and downstream flanking sequences (“buns”), extracts the sequence between them (the library region of interest or barcode), summarizes barcode diversity, and can compare barcode abundance across an ordered set of samples.
+## Install
 
----
-
-## How It Works
-
-### Step 1 — Flank Detection
-
-`bun_extract.py`:
-
-* Searches reads in forward and reverse-complement orientations.
-* Finds exact partial matches at least `min_match` bases long for the configured upstream and downstream buns.
-* Determines the best read orientation.
-* Writes one `{name}_bun_matches.csv` file per primary FASTA/FASTQ input file.
-* Skips paired-end R2 files as primary inputs, but uses an R2 partner when present to verify the barcode extracted from R1.
-* Writes a cross-file barcode membership CSV.
-* Uses file-level threading when multiple primary input files are available.
-
-### Step 2 — Insert / Barcode Extraction
-
-`barcode_from_bun_csv.py`:
-
-* Reads one bun-match CSV or a folder of `*_bun_matches.csv` files.
-* Extracts the sequence between upstream and downstream matches.
-* Adds `barcode` and `barcode_len` columns to augmented CSV outputs.
-* Produces per-file barcode count reports with:
-
-  * Unique barcode count across all extracted barcodes.
-  * Optional abundance-aware collapsing of likely sequencing-error barcodes into nearby, more abundant parent barcodes using Starcode.
-  * Real unique barcode count from Starcode canonical clusters when collapsing is enabled.
-  * Frequency per barcode.
-  * Percent abundance.
-  * A per-barcode flag showing whether the row is a Starcode canonical cluster.
-  * Length deviation from the expected barcode length.
-  * Cluster columns showing exact count, collapsed count, how many variants were collapsed, and which exact barcodes were merged by Starcode.
-* Uses file-level threading when multiple bun-match CSVs are available.
-
-### Step 3 — Ordered Barcode Sample Analysis
-
-`ordered_barcode_sample_analysis.py`:
-
-* Reads barcode count CSVs across samples, treatments, or timepoints in either alphabetical order or an explicitly configured order.
-* Calls barcode presence per sample using a minimum count threshold.
-* Retains barcodes that pass the configured sample/count filters, fills missing sample/barcode combinations with zero reads, and builds count, frequency, and presence matrices.
-* Reports first-to-last changes, largest increases/decreases, highest before/after abundance, and presence/absence differences.
-* Optionally writes trajectory plots, frequency heatmaps, first-vs-last scatter plots, and a gain/loss ratio heatmap.
-* Uses threading to read and preprocess per-sample barcode count CSVs.
-
----
-
-## Dependencies
-
-Core FASTA/FASTQ parsing uses Biopython. Ordered sample analysis also uses pandas, NumPy, and matplotlib. YAML configuration uses PyYAML; interactive trajectories use Plotly. Barcode collapsing uses Starcode.
+Create the Conda environment with all runtime dependencies, including Starcode:
 
 ```bash
-conda install -c bioconda -c conda-forge biopython pandas numpy matplotlib pyyaml plotly starcode
+conda env create -f environment.yml
+conda activate insertdiversity
 ```
 
-Alternatively, install Python dependencies with `python -m pip install -r requirements.txt`
-and install Starcode separately on your `PATH`.
+To update an existing environment after pulling changes:
 
----
-
-## Configuration
-
-InsertDiversity now uses **one consolidated config file**:
-
-* `pipeline_config.yaml` controls every script.
-* YAML comments document sample ordering and the plot eligibility rule. Legacy JSON
-  configs can still be read, but the default config and examples use YAML.
-* `run_order` controls the order used by `run_pipeline.py`.
-* Each entry under `scripts` has an `enabled` flag. Set that flag to `true` to run the step or `false` to skip it.
-* Each entry under `scripts` has a `config` object containing that step's settings.
-* Top-level `threads` controls threading for all steps. The default value is `"auto"`, which uses every hardware thread reported by the system. Set it to a positive integer to limit thread usage globally.
-* If needed, a specific step can override the global thread count by adding `threads: <number>` inside that step's `config` object.
-
-Example toggle and thread limit:
-
-```yaml
-threads: 8
-scripts:
-  bun_extract:
-    enabled: true
-  barcode_from_bun_csv:
-    enabled: true
-  ordered_barcode_sample_analysis:
-    enabled: false
+```bash
+conda env update -f environment.yml --prune
 ```
 
-The example above is abbreviated; keep the full `config` objects in `pipeline_config.yaml`.
+Alternatively, use Python 3.12 with `python -m pip install -r requirements.txt`
+and install Starcode separately on your `PATH`. The Python dependencies are
+Biopython, pandas, NumPy, matplotlib, PyYAML (for legacy configs), Plotly, and
+python-dotenv. Starcode is required when barcode collapsing is enabled.
 
-### Barcode groups and additional barcodes
+## Configure and run
 
-Set the top-level `barcode_groups_csv` to a CSV containing `barcode` and `group`
-columns, like this plate layout (`well` and other extra columns are ignored):
+Edit **`config.env`**. It contains only user-facing settings; output filenames,
+report columns, pipeline order, and other fixed settings are defined in Python
+(`env_config.py` and the analysis scripts).
+
+The supplied config preserves the input/catalog paths and sample order from the
+local example. Point those paths at your own files. The main settings look like:
+
+```dotenv
+INPUT_DIR=/path/to/fastq_files
+OUTPUT_DIR=outputs
+BARCODE_GROUPS_CSV=/path/to/02Nov2026_96barcodes.csv
+THREADS=auto
+UPSTREAM=TCATAGTGAGCTCAGCG
+DOWNSTREAM=GTGCCCCACAAGAGGTT
+EXPECTED_BARCODE_LEN=24
+EXPLICIT_FILES=Initial_S254_R1_001.fastq.gz,16hr_S255_R1_001.fastq.gz,22hr_S256_R1_001.fastq.gz
+```
+
+All relative paths are resolved against the config file's folder. Quote paths
+containing spaces or `#`. Leave `BARCODE_GROUPS_CSV=` empty to use per-barcode
+colors without catalog matching. Leave `EXPLICIT_FILES=` empty for alphabetical
+sample order, or list original FASTA/FASTQ filenames separated by commas. Names
+must have distinct sample stems; do not use barcode-report CSV filenames.
+
+Settings are read directly from the file: you do not need to source it or export
+variables. Shell expressions and `${...}` are not expanded. Boolean values are
+`true` or `false`; misspelled settings and invalid values produce an error.
+Omitted settings use the defaults in `env_config.py`.
+
+Run all three stages, or preview their commands:
+
+```bash
+python run_pipeline.py
+python run_pipeline.py --dry-run
+```
+
+Use another config with `python run_pipeline.py --config /path/to/config.env`.
+Every stage also reads the same config when run individually:
+
+```bash
+python bun_extract.py --config config.env
+python barcode_from_bun_csv.py --config config.env
+python ordered_barcode_sample_analysis.py config.env
+```
+
+The full pipeline always runs flank detection, barcode extraction, then ordered
+analysis. Run a stage individually to reuse outputs from an earlier run. Legacy
+YAML/JSON configs are still accepted through the same CLI arguments; their old
+path and step-enable settings remain in effect. `config.env` replaces the shipped
+`pipeline_config.yaml` as the default.
+
+## Outputs
+
+**All outputs from `config.env` are placed under `OUTPUT_DIR`.** Each stage uses
+subfolders within that one root, so you only configure one output location:
+
+```text
+outputs/
+  bun_matches/                 # Per-input flank matches and barcode membership
+  barcodes/
+    augmented/                 # Flank-match CSVs with extracted barcodes
+    per_file_reports/          # Per-sample barcode counts and Starcode clusters
+    barcode_file_summary.csv
+    barcode_multi_file_membership.csv
+    additional_barcodes.csv   # When a barcode catalog is supplied
+  analysis/
+    retained_counts_matrix.csv
+    retained_frequency_matrix.csv
+    retained_presence_matrix.csv
+    all_barcode_ordered_sample_stats.csv
+    barcode_filter_summary.csv
+    plot_eligible_barcode_stats.csv
+    sample_barcode_counts_summary.csv
+    analysis_summary.txt
+    plots/                     # All-barcode trajectories, heatmaps, scatter plots
+    largest_increase_first_to_last/
+    largest_decrease_first_to_last/
+    highest_frequency_before/
+    highest_frequency_after/   # Ranked tables, matrix subsets, and plots
+```
+
+The multi-file membership report is written for multiple inputs. Flank/barcode
+extraction supports a single input; ordered comparison requires at least two
+samples. Use a new `OUTPUT_DIR` for a different input dataset to avoid including
+old per-sample reports left over from a previous dataset.
+
+## Barcode groups and unmatched sequences
+
+The catalog CSV must contain `barcode` and `group` columns. Additional columns,
+such as `well`, are ignored:
 
 ```csv
 well,barcode,group
@@ -106,168 +124,81 @@ A3,,LB
 B1,TACGTGGTCAGAGGGGTCGTGGGG,Spent SA
 ```
 
-```yaml
-barcode_groups_csv: 02Nov2026_96barcodes.csv
-```
-
-This path is relative to the YAML config file; absolute paths also work. The
-setting is shared by barcode extraction and ordered analysis. For a standalone
-script config, put the same key directly in that config. Omit it or set it to
-`null` to retain the original per-barcode colors and skip the additional report.
-
-All trajectory line plots (all-barcode and ranked plots, both PNG and interactive
-HTML) use a consistent color for each catalog group and include a group legend.
-Unlisted barcodes use gray points and lines at **50% opacity**, with a separate
-"Not in barcode CSV" legend entry. Each legend lists the groups represented in
-that plot. Existing real-barcode, length, count, and plot-limit rules still apply.
-In interactive plots, unlisted trajectories are already gray and stay at 50%
-opacity when samples or barcodes are grayed out using the selection controls.
-
 Blank/whitespace-only barcode rows are ignored. Matching trims whitespace and
-ignores sequence case, but otherwise uses exact sequences (`N` is a literal base,
-not a wildcard). Repeated barcodes in the same group are accepted. A barcode
-assigned to conflicting groups, a nonempty barcode without a group, or a CSV
-missing required headers produces a clear error.
+ignores sequence case, but otherwise uses exact sequences (`N` is literal, not a
+wildcard). Duplicate barcodes within a group are accepted. Conflicting groups or
+nonempty barcodes without a group produce an error.
 
-When a catalog is configured, `barcode_from_bun_csv.py` also writes
-`outputs/barcodes/additional_barcodes.csv` (the path configured by that step's
-`out_additional_barcodes`). If that setting is omitted, the file is placed beside
-`out_file_summary_report`. It lists every nonempty extracted sequence absent from
-the catalog, with `barcode`, `barcode_len`, `total_count`, `num_files`, and `files`
-(semicolon-separated sample/file labels). These are exact observations from the
-flank-extraction outputs, **before length/count filters and Starcode collapsing**,
-including rare variants that may not appear in plots. It does not search arbitrary
-subsequences of reads without valid flanks. A report with no additional barcodes
-contains only the header. Run the barcode extraction step to refresh this report;
-ordered analysis alone uses existing count reports and does not rescan reads.
+All trajectory line plots, including ranked plots, use consistent group colors
+and group legends in both PNG and HTML. Unlisted barcodes use gray lines and
+points at **50% opacity**, labeled "Not in barcode CSV".
 
----
+`barcodes/additional_barcodes.csv` lists every nonempty extracted sequence absent
+from the catalog. Columns are `barcode`, `barcode_len`, `total_count`, `num_files`,
+and `files` (semicolon-separated file labels). Counts are exact observations
+before length/count filtering and Starcode collapsing, so rare variants are
+included even when they do not appear in plots. The report has only a header if
+nothing is unmatched. Run the barcode extraction stage to refresh it; ordered
+analysis alone does not rescan the reads.
 
-## Running the Full or Partial Pipeline
+## Interactive trajectories
 
-Edit `pipeline_config.yaml`, then run:
+With `MAKE_INTERACTIVE_TRAJECTORY_PLOTS=true`, each trajectory PNG has an HTML
+file beside it. Open the HTML in a browser; Plotly is embedded and works offline.
 
-```bash
-python run_pipeline.py --config pipeline_config.yaml
-```
+- **Groups:** uncheck a group to hide all its trajectories, including gray
+  backgrounds. This also works for "Not in barcode CSV". Select all / Hide all
+  apply to groups only. This panel appears when a catalog is configured.
+- **Barcodes:** uncheck an individual barcode to gray out its trajectory. Search
+  filters the checkbox list without changing selections. Select all / Gray out
+  all affect every barcode, even those hidden by search.
+- **Samples:** uncheck a sample to gray out its points and adjacent segments.
 
-To check which enabled commands would run without executing them:
+These controls work together. Restoring a group preserves individual barcode and
+sample selections; changing barcode selections does not re-enable hidden groups.
+Group colors, the 50% opacity of unlisted barcodes, counts, and frequencies stay
+unchanged. PNG exports are static.
 
-```bash
-python run_pipeline.py --config pipeline_config.yaml --dry-run
-```
+## Analysis settings
 
-`run_pipeline.py` passes the same consolidated config file to each enabled script. Each script reads its own block from `pipeline_config.yaml`, so no temporary or per-script config files are required.
+`config.env` retains the tunable settings from the simplified config:
 
----
+- **Flanks:** `UPSTREAM`, `DOWNSTREAM`, `MIN_MATCH`, and `PROGRESS_EVERY`.
+- **Barcodes:** `EXPECTED_BARCODE_LEN`, `MIN_BARCODE_LEN`, `MAX_BARCODE_LEN`,
+  `INCLUDE_EMPTY_BARCODES`, and `MIN_REAL_BARCODE_COUNT`.
+- **Collapsing:** `COLLAPSE_BARCODES`, `STARCODE_PATH`, `STARCODE_DISTANCE`, and
+  `STARCODE_CLUSTER_RATIO`. Starcode uses message passing and one thread per
+  file, while `THREADS` controls file-level parallelism.
+- **Ordering/filtering:** `EXPLICIT_FILES`, `USE_EXISTING_REAL_COLUMN`, and
+  `TOP_N_FOR_EACH_RANKED_OUTPUT`.
+- **Plots:** the `MAKE_*` switches, plot limits, heatmap settings, `LOG_SCALE_Y_AXIS`,
+  and `DPI`. `TOP_N_TO_PLOT` defaults to 100.
 
-## Running Scripts Individually
+Flank detection searches both orientations. R2 files are not treated as primary
+samples; a paired R2 is used to verify the barcode extracted from R1.
 
-You can still run any script directly, but use the same consolidated config file:
+Ordered analysis requires the expected barcode length, uses at least three reads
+for presence, and retains barcodes present in at least one sample. The expected
+length is shared with extraction through `EXPECTED_BARCODE_LEN`. Frequencies use
+all barcode counts as the denominator; before/after comparisons use the first
+and last samples. These fixed rules, report naming, and other removed settings
+live in Python rather than the config.
 
-### 1. Detect buns/flanking matches
+**Every plot uses retained barcodes marked REAL in the first ordered sample.**
+Real status in later samples does not restrict plots. This rule also applies
+when `USE_EXISTING_REAL_COLUMN=false`. `REAL_BARCODE_SAMPLE` must remain `first`.
+The first report must contain the real flag column. Analysis tables can include
+barcodes real only in later samples; `barcode_filter_summary.csv` records plot
+eligibility. Catalog membership changes styling, not these eligibility rules.
 
-```bash
-python bun_extract.py --config pipeline_config.yaml
-```
-
-### 2. Extract and summarize barcodes
-
-```bash
-python barcode_from_bun_csv.py --config pipeline_config.yaml
-```
-
-This writes per-file augmented CSVs, per-file barcode count reports, and a multi-file barcode membership CSV under the locations configured in `pipeline_config.yaml`.
-
-It also writes a per-file summary CSV containing file-level metrics such as:
-
-* total reads in each input CSV
-* reads with extracted barcodes
-* total barcode observations
-* exact unique, collapsed unique, and real-unique barcode counts
-* counts of barcodes unique to that file vs shared across files
-* min/max exact and collapsed barcode abundance and mean count per unique barcode
-* percent of reads with barcodes and percent unique/shared barcodes
-
-Important barcode extraction and collapsing settings include:
-
-* `expected_barcode_len`: expected length of a valid barcode. The barcode report includes `len_minus_expected`, which is used by ordered analysis when expected-length filtering is enabled.
-* `min_barcode_len`: minimum extracted barcode length to count when `include_empty_barcodes` is `false`.
-* `max_barcode_len`: maximum extracted barcode length to count. Barcodes longer than this are discarded before count reports and Starcode collapsing. The default is `100`.
-* `include_empty_barcodes`: if `true`, rows with an extracted barcode length value are counted even when the barcode string is empty. If `false`, only barcodes at least `min_barcode_len` bases long are counted.
-* `min_real_barcode_count`: legacy minimum-count rule used only when `collapse_barcodes` is `false`.
-* `collapse_barcodes`: enables abundance-aware barcode collapsing before the per-file barcode count report is written. When enabled, report rows represent Starcode canonical parent barcodes rather than every exact observed barcode string.
-* `starcode_path`: executable name or path for `starcode`. The script errors immediately if this cannot be found while collapsing is enabled.
-* `starcode_distance`: maximum Levenshtein edit distance passed to Starcode with `-d`. A value of `1` collapses one substitution, insertion, or deletion away; `2` allows up to two edits.
-* `starcode_cluster_ratio`: abundance ratio passed to Starcode with `-r` in message-passing mode. For example, `3` means a candidate variant with 5 reads can collapse into a parent only if the parent has more than 15 reads.
-* `starcode_clustering_algorithm`: one of `message_passing`, `spheres`, or `connected_components`.
-* `starcode_threads`: thread count passed to each Starcode process. The default is `1` because `barcode_from_bun_csv.py` already parallelizes across input files.
-
-### 3. Compare barcodes across ordered samples
+## Tests
 
 ```bash
-python ordered_barcode_sample_analysis.py pipeline_config.yaml
+python -m unittest discover -s tests -v
 ```
 
-Important ordered-analysis settings include:
-
-* `explicit_files`: original FASTA/FASTQ filenames in the desired sample order, for
-  example `[baseline.fasta, treatment.fastq.gz]`. These resolve to
-  `baseline_barcode_counts.csv` and `treatment_barcode_counts.csv` in `input_dir`.
-  Paths to original reads are also accepted using their filenames; the original
-  read files need not still exist. CSV filenames and duplicate sample stems are
-  rejected. Leave `[]` to use alphabetical report order.
-* `use_existing_real_column`: when `true`, a barcode must have a true
-  `existing_real_column` flag as well as passing count/length checks to be called
-  present in a sample. Retention uses those presence calls. Counts in other samples
-  are preserved for retained barcodes, even if their real flags are false there.
-* `min_count_to_call_barcode_present`: minimum count needed to call a barcode present in a sample.
-* `min_samples_present_to_retain_barcode`: number of samples in which a barcode must pass the per-sample filter to be retained.
-* `require_expected_length`: whether to require barcode length to match `expected_barcode_length`.
-* `frequency_denominator`: whether frequencies use all barcodes or only retained barcodes.
-* `before_sample_indices` / `after_sample_indices`: optional explicit sample groups for before-vs-after comparisons.
-
-All plot settings live in `scripts.ordered_barcode_sample_analysis.config.plots`.
-**Every plot uses only retained barcodes marked REAL in the first ordered sample.**
-Real status in later samples does not restrict plots. This rule also applies when
-`use_existing_real_column` is `false`; the first report must contain the real flag
-column. Plot filtering happens before ranking and plot limits, and keeps the
-configured frequency denominator. Analysis tables may include barcodes that are
-real only in later samples. `barcode_filter_summary.csv` records
-`is_real_in_first_sample` and `eligible_for_plots`, and
-`plot_eligible_barcode_stats.csv` lists the set eligible for every plot.
-
-```yaml
-plots:
-  # ALL plots require REAL only in the FIRST sample; later real flags do not matter.
-  real_barcode_sample: first
-  make_interactive_trajectory_plots: true
-```
-
-With `make_interactive_trajectory_plots: true`, each all-barcode or ranked
-trajectory PNG also has an HTML file beside it. Open that file in a browser;
-Plotly is embedded, so no server or network access is needed. Uncheck a sample to
-gray out its points and adjacent trajectory segments; recheck it to restore its
-colors. A separate, searchable barcode list lets you uncheck individual barcodes
-to gray out their entire trajectories. Both selections apply together: reselecting
-a barcode preserves any grayed-out samples. Each section has its own “Select all”
-and “Gray out all” buttons; barcode buttons affect all barcodes even when search
-filters the list. Searching does not change selections. These controls do not
-remove samples, recalculate frequencies, or change which barcodes qualify. PNG
-exports remain static. Existing flat plot settings are still accepted by the loader.
-
-Run regression tests with `python -m unittest discover -s tests -v`. Browser tests
-also require `python -m pip install -r requirements-dev.txt` and system Chromium
-(`chromium` on `PATH`); they are explicitly skipped if those tools are absent.
-
----
-
-## Threading Notes
-
-The scripts parallelize across independent input files, which is the safest concurrency boundary for this workflow:
-
-* `bun_extract.py` processes primary read files concurrently.
-* `barcode_from_bun_csv.py` processes bun-match CSV files concurrently.
-* `ordered_barcode_sample_analysis.py` reads and preprocesses barcode count CSV files concurrently before building ordered matrices.
-
-By default, `threads` is `"auto"`, so the scripts use the maximum hardware threads available to the process. To limit CPU usage, set top-level `threads` in `pipeline_config.yaml` to a positive integer.
+Browser tests additionally require `python -m pip install -r requirements-dev.txt`
+and system Chromium (`chromium` on `PATH`); they are explicitly skipped if absent.
+Tests cover group/barcode/sample selections, offline HTML, catalog matching,
+unmatched-sequence reports, config parsing, single/multiple-input pipelines,
+ordering, and real-barcode filtering.

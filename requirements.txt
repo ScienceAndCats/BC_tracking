@@ -4,3 +4,4 @@ numpy>=1.24
 matplotlib>=3.7
 PyYAML>=6.0
 plotly>=5.18
+python-dotenv>=1.0

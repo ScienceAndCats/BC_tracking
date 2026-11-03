@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run InsertDiversity scripts from one consolidated YAML config."""
+"""Run all InsertDiversity steps using config.env (or a legacy YAML config)."""
 
 from __future__ import annotations
 
@@ -71,12 +71,12 @@ def command_for(name: str, step: Dict[str, Any], config_path: Path) -> List[str]
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run enabled InsertDiversity analysis steps from a consolidated YAML config."
+        description="Run InsertDiversity analysis steps using config.env."
     )
     parser.add_argument(
         "--config",
-        default="pipeline_config.yaml",
-        help="Path to consolidated pipeline YAML config (default: pipeline_config.yaml).",
+        default="config.env",
+        help="Path to pipeline config (default: config.env; legacy YAML also accepted).",
     )
     parser.add_argument(
         "--dry-run",

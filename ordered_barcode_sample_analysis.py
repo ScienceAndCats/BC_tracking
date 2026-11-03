@@ -18,7 +18,7 @@ Behavior:
     - Outputs all-barcode trajectories and a gain/loss-ratio heatmap.
 
 Run:
-    python ordered_barcode_sample_analysis.py pipeline_config.yaml
+    python ordered_barcode_sample_analysis.py config.env
 """
 
 from __future__ import annotations
@@ -935,7 +935,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Analyze barcode counts across ordered samples or treatments."
     )
-    parser.add_argument("config", help="Path to config YAML file")
+    parser.add_argument("config", nargs="?", default="config.env", help="Path to config (default: config.env)")
     args = parser.parse_args()
 
     cfg = load_config(Path(args.config))
