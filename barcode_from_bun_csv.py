@@ -140,7 +140,7 @@ def run_starcode_collapse(
     cluster_info: Dict[str, dict] = {}
 
     if compatible_counts:
-        with tempfile.TemporaryDirectory(prefix="insertdiversity_starcode_") as tmpdir:
+        with tempfile.TemporaryDirectory(prefix="BC_tracking_starcode_") as tmpdir:
             input_path = Path(tmpdir) / "barcodes.tsv"
             output_path = Path(tmpdir) / "starcode.tsv"
 

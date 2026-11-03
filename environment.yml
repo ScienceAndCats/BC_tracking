@@ -1,4 +1,4 @@
-name: insertdiversity
+name: BC_tracking
 channels:
   - conda-forge
   - bioconda

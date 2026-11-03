@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run all InsertDiversity steps using config.env (or a legacy YAML config)."""
+"""Run all BC_tracking steps using config.env (or a legacy YAML config)."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def command_for(name: str, step: Dict[str, Any], config_path: Path) -> List[str]
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run InsertDiversity analysis steps using config.env."
+        description="Run BC_tracking analysis steps using config.env."
     )
     parser.add_argument(
         "--config",
