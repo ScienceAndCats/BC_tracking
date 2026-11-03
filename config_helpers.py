@@ -43,7 +43,11 @@ def configured_threads(cfg: Dict[str, Any], workload_size: Optional[int] = None)
 
 
 def load_config_file(config_path: Path) -> Dict[str, Any]:
-    """Read a YAML mapping safely (legacy JSON mappings are also valid YAML)."""
+    """Read config.env or a legacy YAML/JSON mapping."""
+    if config_path.suffix.lower() == ".env":
+        from env_config import load_env_config
+
+        return load_env_config(config_path)
     import yaml
 
     with config_path.open("r") as handle:
@@ -54,7 +58,7 @@ def load_config_file(config_path: Path) -> Dict[str, Any]:
 
 
 def load_script_config(config_path: Path, script_name: str) -> Dict[str, Any]:
-    """Load either a script-specific config or one step from pipeline_config.yaml.
+    """Load one step from config.env or a legacy script/pipeline config.
 
     A consolidated config is detected by the presence of a top-level 'scripts'
     object. The named script's nested 'config' block is returned, with top-level
